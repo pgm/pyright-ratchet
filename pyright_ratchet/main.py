@@ -1,3 +1,4 @@
+import os
 import subprocess
 import re
 import sys
@@ -14,6 +15,9 @@ def save_errors(errors):
             fd.write(f"{simplified}\n")
 
 def load_errors():
+    if not os.path.exists(PAST_ERRORS_FILE):
+        return None
+        
     errors = set()
     with open(PAST_ERRORS_FILE, "rt") as fd:
         for line in fd:
@@ -35,7 +39,8 @@ def main():
         output = run_cmd(args)
         errors = parse_output(output)
         past_errors = load_errors()
-        print_comparison(past_errors, set([simplified for line, simplified in errors]))
+        if past_errors is None:
+            print_comparison(past_errors, set([simplified for line, simplified in errors]))
         save_errors(errors)
         print(f"Recorded {len(errors)} errors to {PAST_ERRORS_FILE}")
     elif cmd == "run":
