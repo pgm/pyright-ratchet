@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "pyright-ratchet"
+version = "0.1.0"
+description = ""
+authors = ["Philip Montgomery <pmontgom@broadinstitute.org>"]
+readme = "README.md"
+packages = [{include = "pyright_ratchet"}]
+
+[tool.poetry.dependencies]
+python = ">=3.7"
+pyright = "^1.1.290"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+pyright-ratchet="pyright_ratchet.main:main"
