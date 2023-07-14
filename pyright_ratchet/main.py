@@ -2,6 +2,7 @@ import os
 import subprocess
 import re
 import sys
+from typing  import Set
 
 PAST_ERRORS_FILE = "pyright-ratchet-errors.txt"
 
@@ -9,10 +10,12 @@ def run_cmd(args):
     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return result.stdout.decode("utf8").split("\n")
 
-def save_errors(errors):
+def save_errors(errors : Set):
+    errors = sorted(set(errors))
     with open(PAST_ERRORS_FILE, "wt") as fd:
-        for line, simplified in errors:
-            fd.write(f"{simplified}\n")
+        for error in errors:
+            fd.write(f"{error}\n")
+    return len(errors)
 
 def load_errors():
     if not os.path.exists(PAST_ERRORS_FILE):
@@ -31,40 +34,52 @@ def print_comparison(past_errors, new_errors):
     print(f"Fixed {len(fixed_errors)} errors")
 
 def main():
-    cmd = sys.argv[1]
-    args = sys.argv[2:]
+    if len(sys.argv) == 1:
+        cmd = "run"
+        args = "pyright"
+    else:
+        cmd = sys.argv[1]
+        args = sys.argv[2:]
     verbose = True
 
     if cmd == "tighten":
         output = run_cmd(args)
-        errors = parse_output(output)
+        lines_with_error = parse_output(output)
         past_errors = load_errors()
         if past_errors is not None:
             print_comparison(past_errors, set([simplified for line, simplified in errors]))
-        save_errors(errors)
-        print(f"Recorded {len(errors)} errors to {PAST_ERRORS_FILE}")
+        unique_error_count = save_errors([error for _, error in lines_with_error])
+        print(f"Recorded {len(unique_error_count)} errors to {PAST_ERRORS_FILE}")
     elif cmd == "run":
         output = run_cmd(args)
         errors = parse_output(output)
         line_to_simplified = dict(errors)
         past_errors = load_errors()
         new_errors = []
+        unseen_errors = set(past_errors)
 
         for line in output:
             if line in line_to_simplified:
                 # if this line is an error, see if its new or not
-                if line_to_simplified[line] in past_errors:
+                error = line_to_simplified[line]
+                if error in past_errors:
                     if verbose:
                         print(f"(ignoring due to ratchet) {line}")
                 else:
                     new_errors.append(line)
                     if verbose:
                         print(f"(new error) {line}")
+                if error in unseen_errors:
+                    unseen_errors.remove(error)
             else:
                 if verbose:
                     print(line)
         
         print(f"{len(new_errors)} new errors")
+        if len(unseen_errors) > 0:
+            print(f"{len(unseen_errors)} past errors have been fixed. Removing these from the list of ignored errors.")
+            save_errors(past_errors.difference(unseen_errors))
+
         for new_error in new_errors:
             print(new_error)
         if len(new_errors)  > 0:
