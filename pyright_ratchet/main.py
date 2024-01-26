@@ -19,7 +19,7 @@ def save_errors(errors : Set):
 
 def load_errors():
     if not os.path.exists(PAST_ERRORS_FILE):
-        return None
+        return set()
         
     errors = set()
     with open(PAST_ERRORS_FILE, "rt") as fd:
@@ -43,13 +43,14 @@ def main():
     verbose = True
 
     if cmd == "tighten":
+        if args == []:
+            args = ["pyright"]
         output = run_cmd(args)
         lines_with_error = parse_output(output)
         past_errors = load_errors()
-        if past_errors is not None:
-            print_comparison(past_errors, set([simplified for line, simplified in errors]))
+        print_comparison(past_errors, set([simplified for line, simplified in lines_with_error]))
         unique_error_count = save_errors([error for _, error in lines_with_error])
-        print(f"Recorded {len(unique_error_count)} errors to {PAST_ERRORS_FILE}")
+        print(f"Recorded {unique_error_count} errors to {PAST_ERRORS_FILE}")
     elif cmd == "run":
         output = run_cmd(args)
         errors = parse_output(output)
