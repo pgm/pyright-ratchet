@@ -3,12 +3,62 @@ import subprocess
 import re
 import sys
 from typing  import Set
+import argparse
 
 PAST_ERRORS_FILE = "pyright-ratchet-errors.txt"
 
-def run_cmd(args):
+def exec_command(args):
     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return result.stdout.decode("utf8").split("\n")
+
+def run_cmd(args, include_stdout):
+    if args == []:
+        args = ["pyright"]
+
+    output = exec_command(args)
+    errors = parse_output(output)
+    line_to_simplified = dict(errors)
+    past_errors = load_errors()
+    new_errors = []
+    unseen_errors = set(past_errors)
+
+    for line in output:
+        if line in line_to_simplified:
+            # if this line is an error, see if its new or not
+            error = line_to_simplified[line]
+            if error in past_errors:
+                if include_stdout:
+                    print(f"(ignoring due to ratchet) {line}")
+            else:
+                new_errors.append(line)
+                if include_stdout:
+                    print(f"(new error) {line}")
+            if error in unseen_errors:
+                unseen_errors.remove(error)
+        else:
+            if include_stdout:
+                print(line)
+    
+    print(f"{len(new_errors)} new errors")
+    if len(unseen_errors) > 0:
+        print(f"{len(unseen_errors)} past errors have been fixed. Removing these from the list of ignored errors.")
+        save_errors(past_errors.difference(unseen_errors))
+
+    for new_error in new_errors:
+        print(new_error)
+
+    if len(new_errors) > 0:
+        return 1
+
+def tighten_cmd(args):
+    if args == []:
+        args = ["pyright"]
+    output = exec_command(args)
+    lines_with_error = parse_output(output)
+    past_errors = load_errors()
+    print_comparison(past_errors, set([simplified for line, simplified in lines_with_error]))
+    unique_error_count = save_errors([error for _, error in lines_with_error])
+    print(f"Recorded {unique_error_count} errors to {PAST_ERRORS_FILE}")
 
 def save_errors(errors : Set):
     errors = sorted(set(errors))
@@ -34,59 +84,27 @@ def print_comparison(past_errors, new_errors):
     print(f"Fixed {len(fixed_errors)} errors")
 
 def main():
-    if len(sys.argv) == 1:
-        cmd = "run"
-        args = "pyright"
-    else:
-        cmd = sys.argv[1]
-        args = sys.argv[2:]
-    verbose = True
+    parser = argparse.ArgumentParser()
+    subparser = parser.add_subparsers()
+    
+    run_parser = subparser.add_parser("run")
+    run_parser.add_argument("--only-changes", dest="include_stdout", action="store_false", help="if set, only outputs the different between expected errors and current errors")
+    run_parser.add_argument("args", nargs="*")
+    run_parser.set_defaults(func=lambda args: run_cmd(args.args, args.include_stdout))
 
-    if cmd == "tighten":
-        if args == []:
-            args = ["pyright"]
-        output = run_cmd(args)
-        lines_with_error = parse_output(output)
-        past_errors = load_errors()
-        print_comparison(past_errors, set([simplified for line, simplified in lines_with_error]))
-        unique_error_count = save_errors([error for _, error in lines_with_error])
-        print(f"Recorded {unique_error_count} errors to {PAST_ERRORS_FILE}")
-    elif cmd == "run":
-        output = run_cmd(args)
-        errors = parse_output(output)
-        line_to_simplified = dict(errors)
-        past_errors = load_errors()
-        new_errors = []
-        unseen_errors = set(past_errors)
+    tighten_parser = subparser.add_parser("tighten")
+    tighten_parser.add_argument("args", nargs="*")
+    tighten_parser.set_defaults(func=lambda args: tighten_cmd(args.args))
+    
+    def _default_cmd(args):
+        run_cmd([], True)
 
-        for line in output:
-            if line in line_to_simplified:
-                # if this line is an error, see if its new or not
-                error = line_to_simplified[line]
-                if error in past_errors:
-                    if verbose:
-                        print(f"(ignoring due to ratchet) {line}")
-                else:
-                    new_errors.append(line)
-                    if verbose:
-                        print(f"(new error) {line}")
-                if error in unseen_errors:
-                    unseen_errors.remove(error)
-            else:
-                if verbose:
-                    print(line)
-        
-        print(f"{len(new_errors)} new errors")
-        if len(unseen_errors) > 0:
-            print(f"{len(unseen_errors)} past errors have been fixed. Removing these from the list of ignored errors.")
-            save_errors(past_errors.difference(unseen_errors))
+    parser.set_defaults(func=_default_cmd)
+    args = parser.parse_args()
 
-        for new_error in new_errors:
-            print(new_error)
-        if len(new_errors)  > 0:
-            sys.exit(1)
-    else:
-        raise Exception("bad args")
+    ret = args.func(args)
+    if ret:
+        sys.exit(ret)
 
 def parse_output(output):
     error_count = None
