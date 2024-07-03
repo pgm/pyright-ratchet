@@ -97,7 +97,7 @@ def main():
     tighten_parser.set_defaults(func=lambda args: tighten_cmd(args.args))
     
     def _default_cmd(args):
-        run_cmd([], True)
+        return run_cmd([], True)
 
     parser.set_defaults(func=_default_cmd)
     args = parser.parse_args()
